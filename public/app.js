@@ -2,6 +2,12 @@ import { initFirebase } from './firebase-client.js';
 
 initFirebase();
 
+const PROD_API_BASE = 'https://us-central1-downloader-a0f61.cloudfunctions.net/api';
+const host = window.location.hostname;
+const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+const isFirebaseHostingHost = host.endsWith('.web.app') || host.endsWith('.firebaseapp.com');
+const API_BASE = isLocalHost || isFirebaseHostingHost ? '/api' : PROD_API_BASE;
+
 const urlInput = document.getElementById('url-input');
 const analyzeBtn = document.getElementById('analyze-btn');
 const statusText = document.getElementById('status-text');
@@ -63,17 +69,21 @@ function clearFormats() {
   audioList.innerHTML = '';
 }
 
+function postApi(path, body) {
+  return fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
 async function triggerDownload(payload, buttonEl) {
   const prevText = buttonEl.textContent;
   buttonEl.textContent = 'Preparing...';
   buttonEl.disabled = true;
 
   try {
-    const res = await fetch('/api/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    const res = await postApi('/download', payload);
 
     const data = await readApiPayload(res);
 
@@ -160,11 +170,7 @@ async function analyze() {
   setStatus('Analyzing formats...');
 
   try {
-    const res = await fetch('/api/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
+    const res = await postApi('/info', { url });
 
     const payload = await readApiPayload(res);
 
