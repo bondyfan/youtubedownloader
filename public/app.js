@@ -16,6 +16,21 @@ const tpl = document.getElementById('format-template');
 
 let currentUrl = '';
 
+async function readApiPayload(res) {
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  const text = await res.text();
+  return { message: text || `HTTP ${res.status}` };
+}
+
+function extractErrorMessage(payload, fallback) {
+  if (!payload) return fallback;
+  if (payload.details) return `${payload.message || fallback} ${payload.details}`.trim();
+  return payload.message || fallback;
+}
+
 function formatDuration(totalSec) {
   if (!totalSec || Number.isNaN(totalSec)) return 'Unknown length';
   const s = Math.floor(totalSec);
@@ -60,12 +75,12 @@ async function triggerDownload(payload, buttonEl) {
       body: JSON.stringify(payload)
     });
 
+    const data = await readApiPayload(res);
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: 'Download failed' }));
-      throw new Error(err.message || 'Download failed');
+      throw new Error(extractErrorMessage(data, 'Download failed'));
     }
 
-    const data = await res.json();
     if (!data.downloadUrl) {
       throw new Error('Download URL is missing in server response.');
     }
@@ -151,10 +166,10 @@ async function analyze() {
       body: JSON.stringify({ url })
     });
 
-    const payload = await res.json();
+    const payload = await readApiPayload(res);
 
     if (!res.ok) {
-      throw new Error(payload.message || 'Could not analyze this URL.');
+      throw new Error(extractErrorMessage(payload, 'Could not analyze this URL.'));
     }
 
     currentUrl = url;

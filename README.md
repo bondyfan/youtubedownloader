@@ -24,10 +24,37 @@ This avoids a dedicated long-running server (`server.js` removed).
 npm --prefix functions install
 ```
 
-## Local emulator
+## Local development (recommended)
+
+```bash
+npm install
+npm --prefix functions install
+npm run dev
+```
+
+Then open `http://localhost:5173`.
+
+`npm run dev` starts:
+- Vite frontend dev server
+- Firebase Functions emulator (API backend)
+
+The Vite proxy forwards `/api/*` to the local Functions emulator.
+
+## Full Firebase emulator suite
 
 ```bash
 firebase emulators:start
+```
+
+## Local requirements for downloads
+
+- `yt-dlp` must be installed and available in `PATH`
+- `ffmpeg` must be installed and available in `PATH`
+
+Example on macOS (Homebrew):
+
+```bash
+brew install yt-dlp ffmpeg
 ```
 
 ## Deploy

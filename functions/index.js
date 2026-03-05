@@ -12,7 +12,9 @@ admin.initializeApp();
 
 const YOUTUBE_URL_RE = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
 const YT_DLP_BIN = path.join(os.tmpdir(), 'yt-dlp');
-const ytDlp = new YTDlpWrap(YT_DLP_BIN);
+const IS_EMULATOR = process.env.FUNCTIONS_EMULATOR === 'true';
+const SYSTEM_YT_DLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
+const ytDlp = new YTDlpWrap(IS_EMULATOR ? SYSTEM_YT_DLP_BIN : YT_DLP_BIN);
 let ytDlpReadyPromise = null;
 
 function sanitizeFileName(name) {
@@ -95,6 +97,19 @@ function pickAudioFormats(formats) {
 }
 
 async function ensureYtDlpBinary() {
+  if (IS_EMULATOR) {
+    // In emulator mode rely on local installation to avoid Python-runtime
+    // mismatches from auto-downloaded artifacts.
+    try {
+      await ytDlp.getVersion();
+    } catch (error) {
+      throw new Error(
+        `Local yt-dlp is required for emulator mode. Install it and ensure it is in PATH (or set YTDLP_BIN). Original error: ${formatError(error)}`
+      );
+    }
+    return;
+  }
+
   if (fs.existsSync(YT_DLP_BIN)) return;
   if (!ytDlpReadyPromise) {
     ytDlpReadyPromise = (async () => {

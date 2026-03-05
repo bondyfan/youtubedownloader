@@ -4,9 +4,17 @@
   "private": true,
   "description": "Modern YouTube downloader on Firebase Hosting + Cloud Functions",
   "scripts": {
+    "dev": "concurrently -k \"npm:dev:functions\" \"npm:dev:web\"",
+    "dev:functions": "firebase emulators:start --only functions",
+    "dev:web": "vite",
     "serve": "firebase emulators:start",
     "deploy": "firebase deploy",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:functions": "firebase deploy --only functions"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "firebase-tools": "^15.8.0",
+    "vite": "^7.1.5"
   }
 }
