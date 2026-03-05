@@ -70,6 +70,23 @@ firebase deploy --only functions
 firebase deploy --only hosting
 ```
 
+## Optional: cookies to reduce YouTube bot blocks
+
+Set a Firebase Functions secret named `YTDLP_COOKIES` containing Netscape cookies.txt content:
+
+```bash
+firebase functions:secrets:set YTDLP_COOKIES --project downloader-a0f61
+firebase deploy --only functions --project downloader-a0f61
+```
+
+After deploy, verify:
+
+```bash
+curl https://us-central1-downloader-a0f61.cloudfunctions.net/api/health
+```
+
+You should see `"cookiesConfigured": true`.
+
 ## Important notes
 
 - The function downloads `yt-dlp` binary to temp storage on cold start.

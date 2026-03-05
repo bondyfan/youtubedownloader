@@ -12,10 +12,13 @@ admin.initializeApp();
 
 const YOUTUBE_URL_RE = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
 const YT_DLP_BIN = path.join(os.tmpdir(), 'yt-dlp');
+const YT_DLP_COOKIE_FILE = path.join(os.tmpdir(), 'yt-dlp-cookies.txt');
+const YT_DLP_COOKIE_SECRET = 'YTDLP_COOKIES';
 const IS_EMULATOR = process.env.FUNCTIONS_EMULATOR === 'true';
 const SYSTEM_YT_DLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
 const ytDlp = new YTDlpWrap(IS_EMULATOR ? SYSTEM_YT_DLP_BIN : YT_DLP_BIN);
 let ytDlpReadyPromise = null;
+let cookieWriteHash = '';
 
 function sanitizeFileName(name) {
   return (name || 'download')
@@ -137,10 +140,40 @@ async function ensureYtDlpBinary() {
   await ytDlpReadyPromise;
 }
 
+function getCookieSecretValue() {
+  const raw = process.env[YT_DLP_COOKIE_SECRET];
+  if (!raw || !raw.trim()) return '';
+  return raw.trim();
+}
+
+function ensureCookieFile() {
+  const content = getCookieSecretValue();
+  if (!content) return '';
+
+  const hash = crypto.createHash('sha256').update(content).digest('hex');
+  if (hash === cookieWriteHash && fs.existsSync(YT_DLP_COOKIE_FILE)) {
+    return YT_DLP_COOKIE_FILE;
+  }
+
+  fs.writeFileSync(YT_DLP_COOKIE_FILE, content, { mode: 0o600 });
+  cookieWriteHash = hash;
+  return YT_DLP_COOKIE_FILE;
+}
+
+function buildBaseYtArgs() {
+  const args = ['--no-playlist'];
+  const cookieFile = ensureCookieFile();
+  if (cookieFile) {
+    args.push('--cookies', cookieFile);
+  }
+  return args;
+}
+
 async function getVideoInfo(url) {
   await ensureYtDlpBinary();
-  const info = await ytDlp.getVideoInfo(url);
-  return info;
+  const args = [...buildBaseYtArgs(), '--dump-single-json', '--no-warnings', url];
+  const output = await ytDlp.execPromise(args);
+  return JSON.parse(output);
 }
 
 async function downloadToTemp({ url, type, formatId, audioCodec }) {
@@ -149,7 +182,7 @@ async function downloadToTemp({ url, type, formatId, audioCodec }) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yt-download-'));
   const outTemplate = path.join(tempDir, '%(title)s.%(ext)s');
 
-  const args = ['--no-playlist', '--newline', '-o', outTemplate, '-f'];
+  const args = [...buildBaseYtArgs(), '--newline', '-o', outTemplate, '-f'];
 
   if (type === 'video') {
     args.push(`${formatId}+bestaudio/best`);
@@ -194,7 +227,8 @@ exports.api = onRequest(
   {
     region: 'us-central1',
     timeoutSeconds: 540,
-    memory: '1GiB'
+    memory: '1GiB',
+    secrets: [YT_DLP_COOKIE_SECRET]
   },
   async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
@@ -210,7 +244,10 @@ exports.api = onRequest(
 
       if (route === '/health' && req.method === 'GET') {
         await ensureYtDlpBinary();
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, {
+          ok: true,
+          cookiesConfigured: Boolean(getCookieSecretValue())
+        });
       }
 
       if (route === '/info' && req.method === 'POST') {
