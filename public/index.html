@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YouTube Downloader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-aurora"></div>
+    <main class="shell">
+      <header class="hero">
+        <p class="pill">YouTube Downloader</p>
+        <h1>Download video or audio in the format you want.</h1>
+        <p class="sub">
+          Paste a YouTube URL, inspect available formats, then download MP4 up to 1080p or higher resolutions up to 4K where available.
+        </p>
+      </header>
+
+      <section class="panel" id="controls-panel">
+        <label for="url-input">Video URL</label>
+        <div class="input-row">
+          <input id="url-input" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+          <button id="analyze-btn">Analyze</button>
+        </div>
+        <p class="hint" id="status-text">Ready</p>
+      </section>
+
+      <section class="panel hidden" id="meta-panel">
+        <div class="meta-layout">
+          <img id="thumb" alt="thumbnail" />
+          <div>
+            <h2 id="title"></h2>
+            <p id="meta"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="formats hidden" id="formats-panel">
+        <article class="panel">
+          <div class="section-head">
+            <h3>Video</h3>
+            <p>MP4 up to 1080p and up to 4K in other available formats.</p>
+          </div>
+          <div id="video-list" class="cards"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <h3>Audio</h3>
+            <p>Extract clean audio and convert to your preferred codec.</p>
+          </div>
+          <div id="audio-list" class="cards"></div>
+        </article>
+      </section>
+    </main>
+
+    <template id="format-template">
+      <div class="card">
+        <div>
+          <h4 class="label"></h4>
+          <p class="details"></p>
+        </div>
+        <button class="download-btn">Download</button>
+      </div>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
