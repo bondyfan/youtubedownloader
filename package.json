@@ -7,6 +7,7 @@
     "dev": "concurrently -k \"npm:dev:functions\" \"npm:dev:web\"",
     "dev:functions": "firebase emulators:start --only functions",
     "dev:web": "vite",
+    "build": "vite build",
     "serve": "firebase emulators:start",
     "deploy": "firebase deploy",
     "deploy:hosting": "firebase deploy --only hosting",
