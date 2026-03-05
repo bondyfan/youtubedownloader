@@ -1,96 +1,50 @@
-# YouTube Downloader (Firebase)
+# YouTube Downloader Desktop
 
-Modern YouTube downloader UI deployed with Firebase Hosting + Cloud Functions.
-
-## Architecture
-
-- `public/` is a static frontend (Hosting).
-- `functions/` provides API endpoints:
-  - `POST /api/info` - analyze URL and return formats
-  - `POST /api/download` - download selected format, upload to Cloud Storage, return signed URL
-  - `GET /api/health` - runtime check
-
-This avoids a dedicated long-running server (`server.js` removed).
+Local macOS desktop app built with Vite + Tauri. Downloads run on the user's Mac via local `yt-dlp` and `ffmpeg`, which avoids the cloud IP bot checks that were breaking the Firebase version.
 
 ## Requirements
 
-- Node.js 20+
-- Firebase CLI (`npm i -g firebase-tools`)
-- Firebase project already configured (`downloader-a0f61`)
+- macOS
+- Node.js 18+
+- Rust toolchain via `rustup`
+- `yt-dlp` in `PATH`
+- `ffmpeg` in `PATH`
 
-## Install
-
-```bash
-npm --prefix functions install
-```
-
-## Local development (recommended)
-
-```bash
-npm install
-npm --prefix functions install
-npm run dev
-```
-
-Then open `http://localhost:5173`.
-
-`npm run dev` starts:
-- Vite frontend dev server
-- Firebase Functions emulator (API backend)
-
-The Vite proxy forwards `/api/*` to the local Functions emulator.
-
-## Full Firebase emulator suite
-
-```bash
-firebase emulators:start
-```
-
-## Local requirements for downloads
-
-- `yt-dlp` must be installed and available in `PATH`
-- `ffmpeg` must be installed and available in `PATH`
-
-Example on macOS (Homebrew):
+Install the media tools on macOS:
 
 ```bash
 brew install yt-dlp ffmpeg
 ```
 
-## Deploy
+Install Rust:
 
 ```bash
-firebase deploy
+curl https://sh.rustup.rs -sSf | sh
 ```
 
-or separately:
+## Development
 
 ```bash
-firebase deploy --only functions
-firebase deploy --only hosting
+npm install
+npm run desktop:dev
 ```
 
-## Optional: cookies to reduce YouTube bot blocks
+This starts Vite for the frontend and a Tauri window for the desktop shell.
 
-Set a Firebase Functions secret named `YTDLP_COOKIES` containing Netscape cookies.txt content:
+## Build
 
 ```bash
-firebase functions:secrets:set YTDLP_COOKIES --project downloader-a0f61
-firebase deploy --only functions --project downloader-a0f61
+npm run desktop:build
 ```
 
-After deploy, verify:
+## Current structure
 
-```bash
-curl https://us-central1-downloader-a0f61.cloudfunctions.net/api/health
-```
+- `public/`: frontend UI
+- `src-tauri/`: desktop shell and native commands
+- `functions/`: previous Firebase backend, kept for reference and migration history
 
-You should see `"cookiesConfigured": true`.
+## Notes
 
-## Important notes
-
-- The function downloads `yt-dlp` binary to temp storage on cold start.
-- `ffmpeg` binary is bundled via `@ffmpeg-installer/ffmpeg`.
-- Download endpoint returns a signed Cloud Storage URL (15 min expiration).
-- Configure Cloud Storage lifecycle rules if you want automatic cleanup of `downloads/` objects.
-- Use responsibly and respect YouTube Terms and local copyright laws.
+- The desktop app expects local `yt-dlp` and `ffmpeg`.
+- Downloads are saved to a location chosen by the user through the native save dialog.
+- Rust is not installed in the current workspace environment, so the desktop bundle could not be built here yet.

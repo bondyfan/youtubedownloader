@@ -8,3 +8,4 @@ firebase-debug.*.log
 .env.*
 dist/
 public/dist/
+src-tauri/target/

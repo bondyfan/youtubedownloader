@@ -1,12 +1,5 @@
-import { initFirebase } from './firebase-client.js';
-
-initFirebase();
-
-const PROD_API_BASE = 'https://us-central1-downloader-a0f61.cloudfunctions.net/api';
-const host = window.location.hostname;
-const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-const isFirebaseHostingHost = host.endsWith('.web.app') || host.endsWith('.firebaseapp.com');
-const API_BASE = isLocalHost || isFirebaseHostingHost ? '/api' : PROD_API_BASE;
+import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 
 const urlInput = document.getElementById('url-input');
 const analyzeBtn = document.getElementById('analyze-btn');
@@ -21,21 +14,8 @@ const audioList = document.getElementById('audio-list');
 const tpl = document.getElementById('format-template');
 
 let currentUrl = '';
-
-async function readApiPayload(res) {
-  const contentType = (res.headers.get('content-type') || '').toLowerCase();
-  if (contentType.includes('application/json')) {
-    return res.json();
-  }
-  const text = await res.text();
-  return { message: text || `HTTP ${res.status}` };
-}
-
-function extractErrorMessage(payload, fallback) {
-  if (!payload) return fallback;
-  if (payload.details) return `${payload.message || fallback} ${payload.details}`.trim();
-  return payload.message || fallback;
-}
+let currentTitle = '';
+let desktopReady = false;
 
 function formatDuration(totalSec) {
   if (!totalSec || Number.isNaN(totalSec)) return 'Unknown length';
@@ -69,50 +49,84 @@ function clearFormats() {
   audioList.innerHTML = '';
 }
 
-function postApi(path, body) {
-  const controller = new AbortController();
-  const timeoutMs = 45000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  return fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: controller.signal
-  }).finally(() => clearTimeout(timer));
+function sanitizeFileName(name) {
+  return (name || 'download')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
 }
 
-async function triggerDownload(payload, buttonEl) {
+function buildDefaultFileName(entry, kind) {
+  const safeTitle = sanitizeFileName(currentTitle || 'download');
+  const ext = kind === 'audio' ? (entry.ext === 'm4a' ? 'm4a' : 'mp3') : entry.ext;
+  return `${safeTitle}.${ext}`;
+}
+
+async function chooseSavePath(entry, kind) {
+  const ext = kind === 'audio' ? (entry.ext === 'm4a' ? 'm4a' : 'mp3') : entry.ext;
+  return save({
+    defaultPath: buildDefaultFileName(entry, kind),
+    filters: [
+      {
+        name: kind === 'audio' ? 'Audio' : 'Video',
+        extensions: [ext]
+      }
+    ]
+  });
+}
+
+async function invokeWithTimeout(command, args, timeoutMs = 90000) {
+  return Promise.race([
+    invoke(command, args),
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000}s.`)), timeoutMs);
+    })
+  ]);
+}
+
+async function verifyDesktopTools() {
+  try {
+    const health = await invoke('health_check');
+    if (!health.ytDlpFound || !health.ffmpegFound) {
+      const missing = [];
+      if (!health.ytDlpFound) missing.push('yt-dlp');
+      if (!health.ffmpegFound) missing.push('ffmpeg');
+      analyzeBtn.disabled = true;
+      setStatus(`Missing local tools: ${missing.join(', ')}. Install with brew install yt-dlp ffmpeg.`, true);
+      return;
+    }
+
+    desktopReady = true;
+    analyzeBtn.disabled = false;
+    setStatus('Ready');
+  } catch (error) {
+    analyzeBtn.disabled = true;
+    setStatus(`Desktop bridge unavailable: ${error.message || 'unknown error'}`, true);
+  }
+}
+
+async function triggerDownload(payload, entry, kind, buttonEl) {
+  const savePath = await chooseSavePath(entry, kind);
+  if (!savePath) {
+    setStatus('Download cancelled.');
+    return;
+  }
+
   const prevText = buttonEl.textContent;
-  buttonEl.textContent = 'Preparing...';
+  buttonEl.textContent = 'Downloading...';
   buttonEl.disabled = true;
 
   try {
-    const res = await postApi('/download', payload);
+    const result = await invokeWithTimeout('download_media', {
+      request: {
+        ...payload,
+        outputPath: savePath
+      }
+    }, 180000);
 
-    const data = await readApiPayload(res);
-
-    if (!res.ok) {
-      throw new Error(extractErrorMessage(data, 'Download failed'));
-    }
-
-    if (!data.downloadUrl) {
-      throw new Error('Download URL is missing in server response.');
-    }
-
-    const a = document.createElement('a');
-    a.href = data.downloadUrl;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setStatus(`Download ready: ${data.fileName || 'file'}`);
+    setStatus(`Saved to ${result.savedPath}`);
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      setStatus('Request timed out after 45s. Please try again.', true);
-      return;
-    }
     setStatus(error.message || 'Download failed', true);
   } finally {
     buttonEl.textContent = prevText;
@@ -126,8 +140,9 @@ function renderFormatCard(targetEl, entry, kind) {
   node.querySelector('.details').textContent = `Approx: ${formatBytes(entry.approxSize)}`;
 
   const btn = node.querySelector('.download-btn');
-  btn.addEventListener('click', () => {
-    if (!currentUrl) return;
+  btn.addEventListener('click', async () => {
+    if (!currentUrl || !desktopReady) return;
+
     const payload = {
       url: currentUrl,
       type: kind,
@@ -138,7 +153,7 @@ function renderFormatCard(targetEl, entry, kind) {
       payload.audioCodec = entry.ext === 'm4a' ? 'm4a' : 'mp3';
     }
 
-    triggerDownload(payload, btn);
+    await triggerDownload(payload, entry, kind, btn);
   });
 
   targetEl.appendChild(node);
@@ -173,21 +188,22 @@ async function analyze() {
     return;
   }
 
+  if (!desktopReady) {
+    setStatus('Desktop runtime is not ready yet.', true);
+    return;
+  }
+
   clearFormats();
   currentUrl = '';
+  currentTitle = '';
   analyzeBtn.disabled = true;
   setStatus('Analyzing formats...');
 
   try {
-    const res = await postApi('/info', { url });
-
-    const payload = await readApiPayload(res);
-
-    if (!res.ok) {
-      throw new Error(extractErrorMessage(payload, 'Could not analyze this URL.'));
-    }
+    const payload = await invokeWithTimeout('analyze_url', { url });
 
     currentUrl = url;
+    currentTitle = payload.title || 'Untitled';
     titleEl.textContent = payload.title || 'Untitled';
     const uploader = payload.uploader ? `by ${payload.uploader}` : 'Unknown channel';
     metaEl.textContent = `${uploader} • ${formatDuration(payload.duration)}`;
@@ -200,14 +216,8 @@ async function analyze() {
     renderVideoFormats(payload.videoFormats || []);
     renderAudioFormats(payload.audioFormats || []);
 
-    setStatus('Select format and press download.');
+    setStatus('Select format and choose where to save it.');
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      setStatus('Analysis timed out after 45s. Please try again.', true);
-      metaPanel.classList.add('hidden');
-      formatsPanel.classList.add('hidden');
-      return;
-    }
     setStatus(error.message || 'Analysis failed.', true);
     metaPanel.classList.add('hidden');
     formatsPanel.classList.add('hidden');
@@ -216,7 +226,10 @@ async function analyze() {
   }
 }
 
+analyzeBtn.disabled = true;
 analyzeBtn.addEventListener('click', analyze);
 urlInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') analyze();
 });
+
+verifyDesktopTools();
