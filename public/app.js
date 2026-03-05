@@ -70,11 +70,16 @@ function clearFormats() {
 }
 
 function postApi(path, body) {
+  const controller = new AbortController();
+  const timeoutMs = 45000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   return fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+    body: JSON.stringify(body),
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
 }
 
 async function triggerDownload(payload, buttonEl) {
@@ -104,6 +109,10 @@ async function triggerDownload(payload, buttonEl) {
     a.remove();
     setStatus(`Download ready: ${data.fileName || 'file'}`);
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      setStatus('Request timed out after 45s. Please try again.', true);
+      return;
+    }
     setStatus(error.message || 'Download failed', true);
   } finally {
     buttonEl.textContent = prevText;
@@ -193,6 +202,12 @@ async function analyze() {
 
     setStatus('Select format and press download.');
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      setStatus('Analysis timed out after 45s. Please try again.', true);
+      metaPanel.classList.add('hidden');
+      formatsPanel.classList.add('hidden');
+      return;
+    }
     setStatus(error.message || 'Analysis failed.', true);
     metaPanel.classList.add('hidden');
     formatsPanel.classList.add('hidden');

@@ -30,6 +30,21 @@ function formatError(error) {
   return String(error || 'Unknown error');
 }
 
+function classifyYtError(message) {
+  const text = (message || '').toLowerCase();
+  if (text.includes('sign in to confirm') || text.includes("you're not a bot")) {
+    return {
+      status: 429,
+      message:
+        'YouTube blocked this request (bot verification). Try another video later, or use cookies/proxy setup for yt-dlp.'
+    };
+  }
+  if (text.includes('video unavailable')) {
+    return { status: 404, message: 'Video is unavailable.' };
+  }
+  return null;
+}
+
 function pickVideoFormats(formats) {
   const candidates = formats
     .filter((f) => f.vcodec && f.vcodec !== 'none' && f.height && f.height <= 2160)
@@ -285,9 +300,17 @@ exports.api = onRequest(
       return sendJson(res, 404, { message: 'Not found' });
     } catch (error) {
       logger.error('API error', error);
+      const details = formatError(error);
+      const classified = classifyYtError(details);
+      if (classified) {
+        return sendJson(res, classified.status, {
+          message: classified.message,
+          details
+        });
+      }
       return sendJson(res, 500, {
         message: 'Request failed.',
-        details: formatError(error)
+        details
       });
     }
   }
