@@ -19,6 +19,7 @@ const SYSTEM_YT_DLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
 const ytDlp = new YTDlpWrap(IS_EMULATOR ? SYSTEM_YT_DLP_BIN : YT_DLP_BIN);
 let ytDlpReadyPromise = null;
 let cookieWriteHash = '';
+let warnedInvalidCookieSecret = false;
 
 function sanitizeFileName(name) {
   return (name || 'download')
@@ -26,6 +27,30 @@ function sanitizeFileName(name) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120);
+}
+
+function normalizeYouTubeUrl(raw) {
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase();
+
+    if (host.includes('youtu.be')) {
+      const id = u.pathname.replace(/^\/+/, '').split('/')[0];
+      if (!id) return raw;
+      return `https://www.youtube.com/watch?v=${id}`;
+    }
+
+    if (host.includes('youtube.com')) {
+      const id = u.searchParams.get('v');
+      if (id) {
+        return `https://www.youtube.com/watch?v=${id}`;
+      }
+    }
+  } catch {
+    return raw;
+  }
+
+  return raw;
 }
 
 function formatError(error) {
@@ -146,9 +171,26 @@ function getCookieSecretValue() {
   return raw.trim();
 }
 
+function hasYouTubeCookies(content) {
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  return lines.some((line) => line.toLowerCase().includes('youtube.com'));
+}
+
 function ensureCookieFile() {
   const content = getCookieSecretValue();
   if (!content) return '';
+  if (!hasYouTubeCookies(content)) {
+    if (!warnedInvalidCookieSecret) {
+      logger.warn(
+        `${YT_DLP_COOKIE_SECRET} is set but does not appear to contain youtube.com cookies.`
+      );
+      warnedInvalidCookieSecret = true;
+    }
+    return '';
+  }
 
   const hash = crypto.createHash('sha256').update(content).digest('hex');
   if (hash === cookieWriteHash && fs.existsSync(YT_DLP_COOKIE_FILE)) {
@@ -166,6 +208,7 @@ function buildBaseYtArgs() {
   if (cookieFile) {
     args.push('--cookies', cookieFile);
   }
+  args.push('--extractor-args', 'youtube:player_client=ios,web,tv');
   return args;
 }
 
@@ -257,7 +300,8 @@ exports.api = onRequest(
           return sendJson(res, 400, { message: 'Provide a valid YouTube URL.' });
         }
 
-        const data = await getVideoInfo(url);
+        const normalizedUrl = normalizeYouTubeUrl(url);
+        const data = await getVideoInfo(normalizedUrl);
         const formats = Array.isArray(data.formats) ? data.formats : [];
         const videoFormats = pickVideoFormats(formats);
         const audioFormats = pickAudioFormats(formats);
@@ -292,8 +336,9 @@ exports.api = onRequest(
           return sendJson(res, 400, { message: 'Choose a specific format.' });
         }
 
+        const normalizedUrl = normalizeYouTubeUrl(url);
         const { tempDir, filePath } = await downloadToTemp({
-          url,
+          url: normalizedUrl,
           type,
           formatId,
           audioCodec: typeof audioCodec === 'string' ? audioCodec : 'mp3'
